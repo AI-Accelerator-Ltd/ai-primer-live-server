@@ -1008,17 +1008,37 @@ io.on('connection', (socket) => {
       eventData: data.data,
     });
 
-    // Cache for aggregation
+    // Cache for aggregation — replace previous vote from same participant on same slide (polls only)
     if (!responseCache[sessionCode]) responseCache[sessionCode] = [];
-    responseCache[sessionCode].push({
-      sessionCode,
-      slideIndex: data.slideIndex,
-      type: data.type,
-      data: data.data,
-      participantId: data.participantId,
-      participantName: data.participantName,
-      createdAt: new Date().toISOString(),
-    });
+    if (data.type === 'poll' && data.participantId) {
+      var idx = responseCache[sessionCode].findIndex(function (r) {
+        return r.slideIndex === data.slideIndex && r.type === 'poll' && r.participantId === data.participantId;
+      });
+      if (idx !== -1) {
+        responseCache[sessionCode][idx].data = data.data;
+        responseCache[sessionCode][idx].createdAt = new Date().toISOString();
+      } else {
+        responseCache[sessionCode].push({
+          sessionCode: sessionCode,
+          slideIndex: data.slideIndex,
+          type: data.type,
+          data: data.data,
+          participantId: data.participantId,
+          participantName: data.participantName,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    } else {
+      responseCache[sessionCode].push({
+        sessionCode: sessionCode,
+        slideIndex: data.slideIndex,
+        type: data.type,
+        data: data.data,
+        participantId: data.participantId,
+        participantName: data.participantName,
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     // Update participant activity tracking
     if (liveParticipants[sessionCode]) {
