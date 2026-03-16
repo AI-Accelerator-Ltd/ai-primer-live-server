@@ -945,6 +945,13 @@ io.on('connection', (socket) => {
   });
 
   // QR toggle (presenter toggles QR overlay on broadcast views)
+  // QR state — explicit show/hide from presenter
+  socket.on('qr-state', (data) => {
+    if (mode !== 'presenter') return;
+    socket.to(sessionCode).emit('qr-state', data);
+  });
+
+  // Legacy toggle-qr support
   socket.on('toggle-qr', (data) => {
     if (mode !== 'presenter') return;
     socket.to(sessionCode).emit('toggle-qr', data);
