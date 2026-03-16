@@ -944,6 +944,12 @@ io.on('connection', (socket) => {
     socket.to(sessionCode).emit('language-change', { language });
   });
 
+  // QR toggle (presenter toggles QR overlay on broadcast views)
+  socket.on('toggle-qr', (data) => {
+    if (mode !== 'presenter') return;
+    socket.to(sessionCode).emit('toggle-qr', data);
+  });
+
   // Results reveal (presenter-only)
   socket.on('results-reveal', (data) => {
     if (mode !== 'presenter') return;
