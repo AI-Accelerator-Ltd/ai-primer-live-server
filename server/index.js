@@ -944,19 +944,6 @@ io.on('connection', (socket) => {
     socket.to(sessionCode).emit('language-change', { language });
   });
 
-  // QR toggle (presenter toggles QR overlay on broadcast views)
-  // QR state — explicit show/hide from presenter
-  socket.on('qr-state', (data) => {
-    if (mode !== 'presenter') return;
-    socket.to(sessionCode).emit('qr-state', data);
-  });
-
-  // Legacy toggle-qr support
-  socket.on('toggle-qr', (data) => {
-    if (mode !== 'presenter') return;
-    socket.to(sessionCode).emit('toggle-qr', data);
-  });
-
   // Results reveal (presenter-only)
   socket.on('results-reveal', (data) => {
     if (mode !== 'presenter') return;
@@ -971,34 +958,7 @@ io.on('connection', (socket) => {
     const type = data.type || (responses[0] ? responses[0].type : 'poll');
     let resultPayload;
 
-    if (type === 'talent') {
-      // Talent aggregation: good/bad phrase clouds
-      const goodCounts = {};
-      const badCounts = {};
-      responses.forEach(r => {
-        const phrase = (r.data.text || '').trim().toLowerCase();
-        const cat = r.data.category || 'good';
-        if (!phrase) return;
-        if (cat === 'bad') badCounts[phrase] = (badCounts[phrase] || 0) + 1;
-        else goodCounts[phrase] = (goodCounts[phrase] || 0) + 1;
-      });
-      const toSorted = (counts) => Object.entries(counts)
-        .sort((a, b) => b[1] - a[1]).slice(0, 30)
-        .map(([phrase, count]) => ({ word: phrase, count }));
-      resultPayload = { good: toSorted(goodCounts), bad: toSorted(badCounts), total: responses.length };
-    } else if (type === 'role') {
-      // Role aggregation: single phrase cloud
-      const phraseCounts = {};
-      responses.forEach(r => {
-        const phrase = (r.data.text || '').trim().toLowerCase();
-        if (!phrase) return;
-        phraseCounts[phrase] = (phraseCounts[phrase] || 0) + 1;
-      });
-      const phrases = Object.entries(phraseCounts)
-        .sort((a, b) => b[1] - a[1]).slice(0, 30)
-        .map(([phrase, count]) => ({ word: phrase, count }));
-      resultPayload = { phrases, total: responses.length };
-    } else if (type === 'text') {
+    if (type === 'text') {
       // Text aggregation: word cloud + response wall
       const stopWords = new Set(['the','a','an','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','shall','should','may','might','can','could','and','but','or','nor','for','yet','so','in','on','at','to','of','by','with','from','up','out','it','its','i','we','they','you','he','she','my','our','their','your','his','her','this','that','these','those','not','no','all','each','every','both','few','more','most','other','some','such','than','too','very']);
       const wordCounts = {};
@@ -1038,7 +998,7 @@ io.on('connection', (socket) => {
 
   // Participant responses
   socket.on('response', (data) => {
-    const eventTypeMap = { quiz: 'quiz_answer', poll: 'poll_vote', text: 'text_response', graphic: 'graphic_interaction' };
+    const eventTypeMap = { quiz: 'quiz_answer', poll: 'poll_vote', text: 'text_response', graphic: 'graphic_interaction', talent: 'talent_response', role: 'role_response', exercise: 'exercise_upload' };
     const eventType = eventTypeMap[data.type] || data.type;
 
     logInteraction(sessionCode, eventType, {
@@ -1140,59 +1100,6 @@ io.on('connection', (socket) => {
       io.to(sessionCode).emit('text-update', { slideIndex: data.slideIndex, results: { words, texts, total: textResponses.length } });
     }
 
-    // Talent aggregation (good/bad phrase clouds)
-    if (data.type === 'talent') {
-      const talentResponses = responseCache[sessionCode].filter(
-        r => r.slideIndex === data.slideIndex && r.type === 'talent'
-      );
-      // Split into good and bad, keep full phrases, count duplicates
-      const goodCounts = {};
-      const badCounts = {};
-      talentResponses.forEach(r => {
-        const phrase = (r.data.text || '').trim().toLowerCase();
-        const cat = r.data.category || 'good';
-        if (!phrase) return;
-        if (cat === 'bad') {
-          badCounts[phrase] = (badCounts[phrase] || 0) + 1;
-        } else {
-          goodCounts[phrase] = (goodCounts[phrase] || 0) + 1;
-        }
-      });
-      const toSorted = (counts) => Object.entries(counts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 30)
-        .map(([phrase, count]) => ({ word: phrase, count }));
-      io.to(sessionCode).emit('talent-update', {
-        slideIndex: data.slideIndex,
-        results: {
-          good: toSorted(goodCounts),
-          bad: toSorted(badCounts),
-          total: talentResponses.length
-        }
-      });
-    }
-
-    // Role aggregation (single phrase cloud)
-    if (data.type === 'role') {
-      const roleResponses = responseCache[sessionCode].filter(
-        r => r.slideIndex === data.slideIndex && r.type === 'role'
-      );
-      const phraseCounts = {};
-      roleResponses.forEach(r => {
-        const phrase = (r.data.text || '').trim().toLowerCase();
-        if (!phrase) return;
-        phraseCounts[phrase] = (phraseCounts[phrase] || 0) + 1;
-      });
-      const phrases = Object.entries(phraseCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 30)
-        .map(([phrase, count]) => ({ word: phrase, count }));
-      io.to(sessionCode).emit('role-update', {
-        slideIndex: data.slideIndex,
-        results: { phrases, total: roleResponses.length }
-      });
-    }
-
     // Graphic interaction — broadcast to all participants + presenter for real-time sync
     if (data.type === 'graphic') {
       const graphicResponses = responseCache[sessionCode].filter(
@@ -1209,6 +1116,81 @@ io.on('connection', (socket) => {
           total: graphicResponses.length,
           latest: data.data,
         },
+      });
+    }
+
+    // Talent aggregation (good/bad phrase clouds)
+    if (data.type === 'talent') {
+      const talentResponses = responseCache[sessionCode].filter(
+        r => r.slideIndex === data.slideIndex && r.type === 'talent'
+      );
+      const goodPhrases = {}, badPhrases = {};
+      talentResponses.forEach(r => {
+        const text = (r.data.text || '').trim();
+        if (!text) return;
+        const bucket = r.data.category === 'bad' ? badPhrases : goodPhrases;
+        bucket[text] = (bucket[text] || 0) + 1;
+      });
+      const toSorted = (obj) => Object.entries(obj)
+        .map(([word, count]) => ({ word, count }))
+        .sort((a, b) => b.count - a.count);
+      io.to(sessionCode).emit('talent-update', {
+        slideIndex: data.slideIndex,
+        results: { good: toSorted(goodPhrases), bad: toSorted(badPhrases), total: talentResponses.length },
+      });
+    }
+
+    // Role aggregation (single phrase cloud)
+    if (data.type === 'role') {
+      const roleResponses = responseCache[sessionCode].filter(
+        r => r.slideIndex === data.slideIndex && r.type === 'role'
+      );
+      const phrases = {};
+      roleResponses.forEach(r => {
+        const text = (r.data.text || '').trim();
+        if (text) phrases[text] = (phrases[text] || 0) + 1;
+      });
+      const sorted = Object.entries(phrases)
+        .map(([word, count]) => ({ word, count }))
+        .sort((a, b) => b.count - a.count);
+      io.to(sessionCode).emit('role-update', {
+        slideIndex: data.slideIndex,
+        results: { phrases: sorted, total: roleResponses.length },
+      });
+    }
+
+    // Exercise aggregation (image gallery)
+    if (data.type === 'exercise') {
+      // Collect all exercise uploads across all exercise slides in this session
+      const exerciseResponses = responseCache[sessionCode].filter(
+        r => r.type === 'exercise' && r.data && r.data.imageUrl
+      );
+      const images = exerciseResponses.map(r => ({
+        url: r.data.imageUrl,
+        name: r.participantName || 'Anonymous',
+        participantId: r.participantId,
+      }));
+      const results = { images, total: images.length };
+
+      // Emit to the slide that received the upload
+      io.to(sessionCode).emit('exercise-update', {
+        slideIndex: data.slideIndex,
+        results,
+      });
+
+      // Also emit with a linked slide index — gallery slides show the same data
+      // Find all exercise slides in the session and update them
+      const allExerciseSlideIndices = responseCache[sessionCode]
+        .filter(r => r.type === 'exercise')
+        .map(r => r.slideIndex)
+        .filter((v, i, a) => a.indexOf(v) === i);
+      allExerciseSlideIndices.forEach(si => {
+        if (si !== data.slideIndex) {
+          io.to(sessionCode).emit('exercise-update', {
+            slideIndex: si,
+            results,
+          });
+        }
       });
     }
   });
