@@ -924,6 +924,12 @@ io.on('connection', (socket) => {
     socket.to(sessionCode).emit('slide-change', data);
   });
 
+  // QR state relay — presenter tells broadcast to show/hide QR overlay
+  socket.on('qr-state', (data) => {
+    if (mode !== 'presenter') return;
+    socket.to(sessionCode).emit('qr-state', data);
+  });
+
   // Available languages (presenter broadcasts to all participants)
   socket.on('available-languages', (data) => {
     if (mode !== 'presenter') return;
