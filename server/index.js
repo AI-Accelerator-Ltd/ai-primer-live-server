@@ -986,6 +986,18 @@ io.on('connection', (socket) => {
         .sort((a, b) => b[1] - a[1]).slice(0, 30)
         .map(([phrase, count]) => ({ word: phrase, count }));
       resultPayload = { good: toSorted(goodCounts), bad: toSorted(badCounts), total: responses.length };
+    } else if (type === 'role') {
+      // Role aggregation: single phrase cloud
+      const phraseCounts = {};
+      responses.forEach(r => {
+        const phrase = (r.data.text || '').trim().toLowerCase();
+        if (!phrase) return;
+        phraseCounts[phrase] = (phraseCounts[phrase] || 0) + 1;
+      });
+      const phrases = Object.entries(phraseCounts)
+        .sort((a, b) => b[1] - a[1]).slice(0, 30)
+        .map(([phrase, count]) => ({ word: phrase, count }));
+      resultPayload = { phrases, total: responses.length };
     } else if (type === 'text') {
       // Text aggregation: word cloud + response wall
       const stopWords = new Set(['the','a','an','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','shall','should','may','might','can','could','and','but','or','nor','for','yet','so','in','on','at','to','of','by','with','from','up','out','it','its','i','we','they','you','he','she','my','our','their','your','his','her','this','that','these','those','not','no','all','each','every','both','few','more','most','other','some','such','than','too','very']);
@@ -1157,6 +1169,27 @@ io.on('connection', (socket) => {
           bad: toSorted(badCounts),
           total: talentResponses.length
         }
+      });
+    }
+
+    // Role aggregation (single phrase cloud)
+    if (data.type === 'role') {
+      const roleResponses = responseCache[sessionCode].filter(
+        r => r.slideIndex === data.slideIndex && r.type === 'role'
+      );
+      const phraseCounts = {};
+      roleResponses.forEach(r => {
+        const phrase = (r.data.text || '').trim().toLowerCase();
+        if (!phrase) return;
+        phraseCounts[phrase] = (phraseCounts[phrase] || 0) + 1;
+      });
+      const phrases = Object.entries(phraseCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 30)
+        .map(([phrase, count]) => ({ word: phrase, count }));
+      io.to(sessionCode).emit('role-update', {
+        slideIndex: data.slideIndex,
+        results: { phrases, total: roleResponses.length }
       });
     }
 
