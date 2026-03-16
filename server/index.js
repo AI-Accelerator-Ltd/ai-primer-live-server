@@ -964,7 +964,22 @@ io.on('connection', (socket) => {
     const type = data.type || (responses[0] ? responses[0].type : 'poll');
     let resultPayload;
 
-    if (type === 'text') {
+    if (type === 'talent') {
+      // Talent aggregation: good/bad phrase clouds
+      const goodCounts = {};
+      const badCounts = {};
+      responses.forEach(r => {
+        const phrase = (r.data.text || '').trim().toLowerCase();
+        const cat = r.data.category || 'good';
+        if (!phrase) return;
+        if (cat === 'bad') badCounts[phrase] = (badCounts[phrase] || 0) + 1;
+        else goodCounts[phrase] = (goodCounts[phrase] || 0) + 1;
+      });
+      const toSorted = (counts) => Object.entries(counts)
+        .sort((a, b) => b[1] - a[1]).slice(0, 30)
+        .map(([phrase, count]) => ({ word: phrase, count }));
+      resultPayload = { good: toSorted(goodCounts), bad: toSorted(badCounts), total: responses.length };
+    } else if (type === 'text') {
       // Text aggregation: word cloud + response wall
       const stopWords = new Set(['the','a','an','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','shall','should','may','might','can','could','and','but','or','nor','for','yet','so','in','on','at','to','of','by','with','from','up','out','it','its','i','we','they','you','he','she','my','our','their','your','his','her','this','that','these','those','not','no','all','each','every','both','few','more','most','other','some','such','than','too','very']);
       const wordCounts = {};
@@ -1104,6 +1119,38 @@ io.on('connection', (socket) => {
       const words = Object.entries(wordCounts).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([word, count]) => ({ word, count }));
       const texts = textResponses.map(r => ({ name: r.participantName || 'Anonymous', text: r.data.text || '' }));
       io.to(sessionCode).emit('text-update', { slideIndex: data.slideIndex, results: { words, texts, total: textResponses.length } });
+    }
+
+    // Talent aggregation (good/bad phrase clouds)
+    if (data.type === 'talent') {
+      const talentResponses = responseCache[sessionCode].filter(
+        r => r.slideIndex === data.slideIndex && r.type === 'talent'
+      );
+      // Split into good and bad, keep full phrases, count duplicates
+      const goodCounts = {};
+      const badCounts = {};
+      talentResponses.forEach(r => {
+        const phrase = (r.data.text || '').trim().toLowerCase();
+        const cat = r.data.category || 'good';
+        if (!phrase) return;
+        if (cat === 'bad') {
+          badCounts[phrase] = (badCounts[phrase] || 0) + 1;
+        } else {
+          goodCounts[phrase] = (goodCounts[phrase] || 0) + 1;
+        }
+      });
+      const toSorted = (counts) => Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 30)
+        .map(([phrase, count]) => ({ word: phrase, count }));
+      io.to(sessionCode).emit('talent-update', {
+        slideIndex: data.slideIndex,
+        results: {
+          good: toSorted(goodCounts),
+          bad: toSorted(badCounts),
+          total: talentResponses.length
+        }
+      });
     }
 
     // Graphic interaction — broadcast to all participants + presenter for real-time sync
